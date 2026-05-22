@@ -1,5 +1,17 @@
 import { useState } from 'react';
 
+export type ToolbarBookmark = {
+  currentPage: number | null;
+  bookmarkedPage: number | null;
+  onBookmark: () => void;
+  savedFlash?: boolean;
+};
+
+export type ToolbarBreadcrumb = {
+  label: string;
+  onClick: () => void;
+};
+
 export function Toolbar({
   title,
   onTitleChange,
@@ -12,6 +24,8 @@ export function Toolbar({
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  bookmark,
+  breadcrumb,
 }: {
   title: string;
   onTitleChange: (t: string) => void;
@@ -24,6 +38,8 @@ export function Toolbar({
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
+  bookmark?: ToolbarBookmark;
+  breadcrumb?: ToolbarBreadcrumb;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
@@ -31,6 +47,11 @@ export function Toolbar({
   return (
     <div className="toolbar">
       <button onClick={onBack}>← Library</button>
+      {breadcrumb && (
+        <button className="breadcrumb" onClick={breadcrumb.onClick} title="Back to collection">
+          ↩ {breadcrumb.label}
+        </button>
+      )}
       {editing ? (
         <input
           autoFocus
@@ -57,6 +78,19 @@ export function Toolbar({
         </button>
         <button onClick={onZoomIn} disabled={!canZoomIn} title="Zoom in">+</button>
       </div>
+      {bookmark && (
+        <button
+          className="bookmark-btn"
+          onClick={bookmark.onBookmark}
+          title="Save current page to reading list"
+        >
+          {bookmark.savedFlash
+            ? `✓ Saved page ${bookmark.currentPage ?? '?'}`
+            : bookmark.bookmarkedPage != null
+              ? `🔖 Bookmarked p.${bookmark.bookmarkedPage} — update`
+              : '🔖 Bookmark current page'}
+        </button>
+      )}
       <button onClick={onToggleNotes}>Notes</button>
       <button onClick={onOpenSettings}>Settings</button>
     </div>

@@ -14,6 +14,8 @@ export type PdfReaderHandle = {
   /** Get the text-layer element for a given (1-based) page. */
   getPageTextLayer: (page: number) => HTMLElement | null;
   scrollToPage: (page: number) => void;
+  /** The page (1-based) currently most visible in the viewport, or null if unknown. */
+  getCurrentPage: () => number | null;
   /** Concatenate all rendered pages' text-layer text and compute absolute offsets for the given pdf anchor. */
   getArticleContext: (anchor: Anchor) => { article: string; absStart: number; absEnd: number } | null;
 };
@@ -26,6 +28,8 @@ export const PdfReader = forwardRef<PdfReaderHandle, {
 }>(function PdfReader({ article, highlights, anchoredNotes, zoom = 1 }, ref) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const visibleRatios = useRef<Map<number, number>>(new Map());
+  const currentPageRef = useRef<number | null>(null);
   const [renderedPages, setRenderedPages] = useState(0);
 
   useImperativeHandle(ref, () => ({
@@ -35,6 +39,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, {
       const el = pageRefs.current.get(page);
       el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
+    getCurrentPage: () => currentPageRef.current,
     getArticleContext: (anchor) => {
       if (anchor.kind !== 'pdf') return null;
       const pages = [...pageRefs.current.entries()].sort((a, b) => a[0] - b[0]);
@@ -62,7 +67,30 @@ export const PdfReader = forwardRef<PdfReaderHandle, {
     if (!root || !article.pdfBlob) return;
     root.innerHTML = '';
     pageRefs.current.clear();
+    visibleRatios.current.clear();
+    currentPageRef.current = null;
     setRenderedPages(0);
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const layer = entry.target as HTMLElement;
+          const pageNum = Number(layer.dataset.page);
+          if (!pageNum) continue;
+          visibleRatios.current.set(pageNum, entry.intersectionRatio);
+        }
+        let bestPage: number | null = null;
+        let bestRatio = 0;
+        for (const [pn, ratio] of visibleRatios.current) {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            bestPage = pn;
+          }
+        }
+        if (bestPage !== null) currentPageRef.current = bestPage;
+      },
+      { threshold: [0, 0.25, 0.5, 0.75, 1] },
+    );
 
     (async () => {
       const buf = await article.pdfBlob!.arrayBuffer();
@@ -92,6 +120,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, {
 
         root.appendChild(pageWrap);
         pageRefs.current.set(p, textLayer);
+        observer.observe(textLayer);
 
         const ctx = canvas.getContext('2d')!;
         await page.render({ canvasContext: ctx, viewport, canvas }).promise;
@@ -120,6 +149,7 @@ export const PdfReader = forwardRef<PdfReaderHandle, {
 
     return () => {
       cancelled = true;
+      observer.disconnect();
     };
   }, [article.id, zoom]);
 

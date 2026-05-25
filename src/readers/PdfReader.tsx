@@ -94,7 +94,14 @@ export const PdfReader = forwardRef<PdfReaderHandle, {
 
     (async () => {
       const buf = await article.pdfBlob!.arrayBuffer();
-      const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+      const doc = await pdfjsLib.getDocument({
+        data: buf,
+        cMapUrl: `${import.meta.env.BASE_URL}cmaps/`,
+        cMapPacked: true,
+        standardFontDataUrl: `${import.meta.env.BASE_URL}standard_fonts/`,
+        wasmUrl: `${import.meta.env.BASE_URL}wasm/`,
+        iccUrl: `${import.meta.env.BASE_URL}iccs/`,
+      }).promise;
       for (let p = 1; p <= doc.numPages; p++) {
         if (cancelled) return;
         const page = await doc.getPage(p);

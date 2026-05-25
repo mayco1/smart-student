@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { deleteArticle, listArticles, saveArticle, uid, type Article } from '../db/db';
 
-export function Library({ onOpen }: { onOpen: (id: string) => void }) {
+export function Library({
+  onOpen,
+  onOpenResearch,
+}: {
+  onOpen: (id: string) => void;
+  onOpenResearch: () => void;
+}) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [showPaste, setShowPaste] = useState(false);
   const fileTxtRef = useRef<HTMLInputElement>(null);
@@ -46,6 +52,7 @@ export function Library({ onOpen }: { onOpen: (id: string) => void }) {
       <header>
         <h1>Reader</h1>
         <div className="actions">
+          <button onClick={onOpenResearch}>Research</button>
           <button onClick={() => setShowPaste(true)}>Paste text</button>
           <button onClick={() => fileTxtRef.current?.click()}>Upload .txt</button>
           <button onClick={() => filePdfRef.current?.click()}>Upload .pdf</button>

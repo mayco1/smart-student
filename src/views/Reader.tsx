@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   deleteHighlight,
+  findItem,
   getArticle,
   listHighlights,
   listNotes,
@@ -8,8 +9,10 @@ import {
   saveHighlight,
   saveNote,
   uid,
+  updateItemBookmark,
   type Anchor,
   type Article,
+  type CollectionItem,
   type Highlight,
   type Note,
 } from '../db/db';
@@ -31,7 +34,23 @@ type ActiveSelection = {
   y: number;
 };
 
-export function Reader({ articleId, onBack }: { articleId: string; onBack: () => void }) {
+export type ReaderFrom = {
+  collectionId: string;
+  collectionTitle: string;
+  folderId: string | null;
+};
+
+export function Reader({
+  articleId,
+  onBack,
+  from,
+  onBackToCollection,
+}: {
+  articleId: string;
+  onBack: () => void;
+  from?: ReaderFrom;
+  onBackToCollection?: () => void;
+}) {
   const [article, setArticle] = useState<Article | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -39,6 +58,9 @@ export function Reader({ articleId, onBack }: { articleId: string; onBack: () =>
   const [showSettings, setShowSettings] = useState(false);
   const [showNotes, setShowNotes] = useState(true);
   const [zoom, setZoom] = useState(1);
+  const [collectionItem, setCollectionItem] = useState<CollectionItem | null>(null);
+  const [bookmarkFlash, setBookmarkFlash] = useState(false);
+  const continuedRef = useRef(false);
 
   const [active, setActive] = useState<ActiveSelection | null>(null);
   const [translation, setTranslation] = useState<{ x: number; y: number; src: string; he: string; loading: boolean; error: string | null } | null>(null);
@@ -64,8 +86,28 @@ export function Reader({ articleId, onBack }: { articleId: string; onBack: () =>
       setArticle(a);
       setHighlights(await listHighlights(a.id));
       setNotes(await listNotes(a.id));
+      if (from) {
+        const item = await findItem(from.collectionId, from.folderId, a.id);
+        setCollectionItem(item ?? null);
+      } else {
+        setCollectionItem(null);
+      }
+      continuedRef.current = false;
     })();
-  }, [articleId]);
+  }, [articleId, from?.collectionId, from?.folderId]);
+
+  // Scroll to bookmarked page once PDF is ready
+  useEffect(() => {
+    if (continuedRef.current) return;
+    if (!article || article.kind !== 'pdf') return;
+    if (!collectionItem?.bookmarkPage) return;
+    const page = collectionItem.bookmarkPage;
+    const t = setTimeout(() => {
+      pdfRef.current?.scrollToPage(page);
+      continuedRef.current = true;
+    }, 300);
+    return () => clearTimeout(t);
+  }, [article, collectionItem]);
 
   const anchoredNotes = useMemo(() => notes.filter((n) => n.anchor !== null), [notes]);
 
@@ -265,7 +307,7 @@ export function Reader({ articleId, onBack }: { articleId: string; onBack: () =>
     if (!n.anchor) return;
     if (n.anchor.kind === 'text') {
       textRef.current?.scrollToOffset(n.anchor.charStart);
-    } else {
+    } else if (n.anchor.kind === 'pdf') {
       pdfRef.current?.scrollToPage(n.anchor.page);
     }
   }
@@ -275,6 +317,17 @@ export function Reader({ articleId, onBack }: { articleId: string; onBack: () =>
   const currentIdx = zoomIndex === -1 ? zoomLevels.findIndex((z) => z >= zoom) : zoomIndex;
   const canZoomIn = currentIdx < zoomLevels.length - 1;
   const canZoomOut = currentIdx > 0;
+
+  async function doBookmark() {
+    if (!article || article.kind !== 'pdf' || !from || !collectionItem) return;
+    const page = pdfRef.current?.getCurrentPage() ?? 1;
+    await updateItemBookmark(collectionItem.id, page);
+    setCollectionItem({ ...collectionItem, bookmarkPage: page, bookmarkUpdatedAt: Date.now() });
+    setBookmarkFlash(true);
+    setTimeout(() => setBookmarkFlash(false), 1500);
+  }
+
+  const canBookmark = !!(from && collectionItem && article?.kind === 'pdf');
 
   if (!article) return <div className="loading">Loading…</div>;
 
@@ -296,6 +349,21 @@ export function Reader({ articleId, onBack }: { articleId: string; onBack: () =>
         onZoomIn={() => canZoomIn && setZoom(zoomLevels[currentIdx + 1])}
         onZoomOut={() => canZoomOut && setZoom(zoomLevels[currentIdx - 1])}
         onResetZoom={() => setZoom(1)}
+        bookmark={
+          canBookmark
+            ? {
+                currentPage: collectionItem?.bookmarkPage ?? null,
+                bookmarkedPage: collectionItem?.bookmarkPage ?? null,
+                onBookmark: doBookmark,
+                savedFlash: bookmarkFlash,
+              }
+            : undefined
+        }
+        breadcrumb={
+          from && onBackToCollection
+            ? { label: from.collectionTitle, onClick: onBackToCollection }
+            : undefined
+        }
       />
       <div className={`reader-body ${showNotes ? 'with-notes' : ''}`}>
         <div className="article-pane">
